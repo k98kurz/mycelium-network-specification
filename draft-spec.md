@@ -10,19 +10,19 @@ Peers also maintain the internetwork by evaluating models. Specifically, this
 document specifies the method by which autonomous networks gain their domain
 identifiers; the address format; the mechanism used by each node to determine
 its address; the mechanism used by each peer to validate each address
-self-assignment it encounters; the mechanism by which changes in routing or
-policy propagate through the network; route table construction; a system for
-bridging between networks; a tunneling system; a rudimentary routing and route
-discovery system; a set of security models used for spam protection, privacy,
-peer trust scores, peer reliability tracking, bandwidth allocation and
-reciprocity, and Sybil attack resistance. As an additional benefit of the
-protocol's use of Ed25519 digital signatures, each autonomous network will have
-a built-in public key directory, and these directories combine to form a
-distributed hash table. Peers discover each other through gossip about the DHT
-and use ephemeral ECDHE to provide forward secrecy. The exact structure of
-packets is beyond the scope of this document, but some general guidelines are
-proposed. Finally, potential transport, session, and application layer protocols
-as well as upgrades to Mycelium version and network configuration are explored.
+assignment it encounters; the mechanism by which changes in routing or policy
+propagate through the network; route table construction; a system for bridging
+between networks; a tunneling system; a rudimentary routing and route discovery
+system; a set of security models used for spam protection, privacy, peer trust
+scores, peer reliability tracking, bandwidth allocation and reciprocity, and
+Sybil attack resistance. As an additional benefit of the protocol's use of
+Ed25519 digital signatures, each autonomous network will have a built-in public
+key directory, and these directories combine to form a distributed hash table.
+Peers discover each other through gossip about the DHT and use ephemeral ECDHE
+to provide forward secrecy. The exact structure of packets is beyond the scope
+of this document, but some general guidelines are proposed. Finally, potential
+transport, session, and application layer protocols as well as upgrades to
+Mycelium version and network configuration are explored.
 
 ## Table of Contents
 
@@ -33,6 +33,10 @@ as well as upgrades to Mycelium version and network configuration are explored.
     - Configuration
     - Domain Identifier
 4. Address Format
+    - Mesh Addresses
+    - Bus Addresses
+    - Ring Addresses
+    - Hub-and-Spoke Addresses
 5. Address Assignment/Allocation
     - Bootstrapping a New Network
     - Measurements of Latency
@@ -217,10 +221,22 @@ its links. See section 8.3 for details on bridging and topology testing.
 
 The topologies available in Mycelium will be the following:
 - Mesh: a mesh of peers sharing a radio link or variety of radio links described
-by a set of unit vectors and a distance metric.
+by a normed vector space and a distance metric.
 - Bus: a group of peers sharing a data bus link; effectively a 1-dimensional
 mesh network.
 - Ring: a group of peers sharing links configured in a ring topology.
+- Hub-and-Spoke: a group of peers organized in a hierarchical structure with a
+central router providing routing services to its client hosts; a hub-and-spoke
+network may be organized as a multilayer network, or it may be a simple network
+with a central router bridging to other networks.
+
+An autonomous network can be configured for a single link or a set of links with
+similar topological characteristics, e.g. a network comprised of 802.11 and LoRa
+radios for which a mesh topology is most appropriate, or ethernet amd PPP links
+for which hub-and-spoke is an appropriate topology. Mycelium nodes will attempt
+to determine the optimal topologies for their local networks, and the iterative
+process should refine the accuracy of the topologies and utility of directories
+over time.
 
 ### 3.2 Configuration
 
@@ -231,10 +247,10 @@ the following parameters:
     - Mycelium version: the hash of the specification or reference
     implementation of the Mycelium version.
     - Network topology type: the expected network topology to model, i.e. mesh,
-    bus, ring, or star as described in this document, or a topology described in
-    a later version.
-    - Network dimensions: the number and data format of coordinates used to
-    describe a node's location in a mesh network toplogy.
+    bus, ring, or hub-and-spokes as described in this document, or a topology
+    described in a later version.
+    - Address format: the number and data format of coordinates used to describe
+    a node's location in the specified topology.
     - Distance metric: which distance metric to use for gradient descent, i.e.
     L1 norm (taxicab geometry), L2 norm (Euclidean), L3 norm, L-infinity norm
     (Chebyshev), arbitrary Minkowski (tuned p parameter), or some other metric
@@ -251,9 +267,7 @@ the following parameters:
 - Tree 3:
     - Hashcash threshold: the minimum hashcash proof-of-work difficulty for a
     message to be honored by peers.
-    - Some Sybil param
-    - Some security param
-    - Something else
+    - @todo complete the security params
 
 - Tree 4:
     - Network origin public key: the public key of the network origin; can be
@@ -263,6 +277,29 @@ the following parameters:
 
 
 ## 4. Address Format
+
+Addresses assigned to hosts will follow a format specified in the network
+configuration as used in a topology model. The topological data will be encoded
+by XORing the address elements with the network DID. Guest addresses will be the
+address of the host XORed with a guest-specific address element of latency
+measured between host and guest.
+
+### 4.1 Mesh Addresses
+
+A mesh topology network uses tuples of floats as coordinates to encode the
+location of each node in relation to its peers within a normed vecor space. Each
+mesh network configuration will include the number of dimensions of the vector
+space and the norm (distance metric)
+
+### 4.2 Bus Addresses
+
+@todo
+
+### 4.3 Ring Addresses
+
+@todo
+
+### 4.4 Hub-and-Spoke Addresses
 
 @todo
 
