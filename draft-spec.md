@@ -117,7 +117,7 @@ host; all hops in a tunnel are encrypted in layers for privacy, and each hop is
 delayed up to a maximum allowed in the headers, so traffic is indistinguishable
 from ordinary traffic, and the endpoints of a tunnel are hidden from observers.
 - neighbors: nodes which can communicate with each other directly over a link.
-- packet/datagram: a Mycelium header plus payload.
+- packet: a Mycelium header plus payload.
 - autonomous network: a collection of peers that share a network topology, route
 packets for each other, and provide peer services to each other. Each autonomous
 network has its own identifier used in directory entires.
@@ -271,9 +271,9 @@ the following parameters:
     - Data links: a list of descriptions of data links to be included in the
     network.
     - Retransmission limit: the maximum number of times a node should attempt
-    to resend a given datagram.
+    to resend a given packet.
     - Forwarding threshold: a distance threshold used for determining whether a
-    router will attempt to forward a datagram in a network.
+    router will attempt to forward a packet in a network.
 
 - Sub-tree 2: topology model parameters
     - Address format: the number and data format of address elements used to
@@ -335,8 +335,8 @@ the recommended data type for each address element is float64.
 ### 4.2 Bus Address Elements
 
 A bus data link is topologically similar to a one-dimensional mesh. Neighbors
-should not need to route datagrams for each other, but retransmission may be
-a necessary or useful feature. Thus, a single float64 will be sufficient for
+should not need to route packets for each other, but retransmission may be a
+necessary or useful feature. Thus, a single float64 will be sufficient for
 addressing hosts on a bus link and determining whether or not to retransmit.
 
 ### 4.3 Ring Address Elements
@@ -484,7 +484,7 @@ For enhanced privacy applications and network bridging, routers may enable a
 tunneling service. Each tunnel will take the form of a guest address assigned to
 the requesting peer by the router and will be identified with an ephemeral
 public key used as the guest public key. The guest will pay any costs for the
-tunnel specified by router policy, and the router will route datagrams from the
+tunnel specified by router policy, and the router will route packets from the
 guest address to the peer's original address and vice versa. Tunnels may include
 randomized delays to mix traffic and confound attempts at traffic analysis.
 
@@ -496,7 +496,7 @@ with the private key for second-to-last-hop guest address and the router's
 public key; and it continues doing this until all tunnel hops have been included
 in the layer-encrypted packet. When the layer-encrypted packet is received by
 the first (closest) router in the tunnel, the outermost layer of encryption is
-removed, and the remaining datagram is forwarded to the next router; this occurs
+removed, and the remaining packet is forwarded to the next router; this occurs
 until the last layer of encryption is removed and the final packet is sent to
 its destination. When a packet is sent to a tunnel, the router encrypts the
 whole packet before forwarding to the next hop in the tunnel; this continues
