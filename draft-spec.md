@@ -39,7 +39,7 @@ Mycelium version and network configuration are explored.
     - Hub-and-Spoke Address Elements
 5. Address Assignment/Allocation
     - Bootstrapping a New Network
-    - Measurements of Latency
+    - Topological Measurements
     - Leasing of Guest Addresses from Hosts
     - Calculation and Assignment of Address
     - Verification of Address Assignment by Peers
@@ -116,6 +116,7 @@ route traffic through the hosts as if it was attached to a link shared with that
 host; all hops in a tunnel are encrypted in layers for privacy, and each hop is
 delayed up to a maximum allowed in the headers, so traffic is indistinguishable
 from ordinary traffic, and the endpoints of a tunnel are hidden from observers.
+- relay: a host that provides tunneling services.
 - neighbors: nodes which can communicate with each other directly over a link.
 - packet: a Mycelium header plus payload.
 - autonomous network: a collection of peers that share a network topology, route
@@ -209,10 +210,15 @@ be used for both verifying signatures and deriving shared secrets.
 manipulate a network, unfairly distort network activity, or steal a network
 service.
 
-Note: it is expected that each host act as a router, but any router may
+Note: it is expected that each host act as a router and relay, but any host may
 decide to forward packets only on a subset of its interfaces. A host that leases
 an address to a guest is explicitly responsible for forwarding that guest's
-packets, but any host may decline to lease addresses to guests.
+packets, but any host may decline to lease addresses to guests. A relay that
+leases a tunnel guest address to a node is responsible for forwarding that
+tunnel's packets, but each host will have its own independent policies on relay
+availability, cost, etc. Each host will also have its own independent policies
+for providing routing and bridging services to peers, and policy guidance will
+be provided in section 7.
 
 
 ## 3. Autonomous Networks
@@ -239,8 +245,9 @@ configurations with its neighbors to boostrap a group of bridged networks for
 its links. See section 8.3 for details on bridging and topology testing.
 
 The topologies available in Mycelium will be the following:
-- Mesh: a mesh of peers sharing a radio link or variety of radio links described
-by a normed vector space and a distance metric.
+- Mesh: a mesh of peers sharing a radio link, variety of radio links, or a
+sparsely connected graph of directional links; the topology is described by a
+normed vector space and a distance metric.
 - Bus: a group of peers sharing a data bus link; effectively a 1-dimensional
 mesh network.
 - Ring: a group of peers sharing links configured in a ring topology.
@@ -251,7 +258,7 @@ with a central router bridging to other networks.
 
 An autonomous network can be configured for a single link or a set of links with
 similar topological characteristics, e.g. a network comprised of 802.11 and LoRa
-radios for which a mesh topology is most appropriate, or ethernet amd PPP links
+radios for which a mesh topology is most appropriate, or ethernet and PPP links
 for which hub-and-spoke is an appropriate topology. Mycelium nodes will attempt
 to determine the optimal topologies for their local networks, and the iterative
 process should refine the accuracy of the topologies and utility of directories
@@ -380,13 +387,41 @@ hierarchical hub-and-spoke Mycelium networks.
 
 ## 5. Address Assignment/Allocation
 
-@todo
+The mechanism by which an address is assigned/allocated and the mechanisms for
+measuring and bootstrapping a network are specific to the topological model
+specified in the network configuration:
+
+- Mesh and bus: each peer estimates its location in the network topology using
+the locations of peers and the round-trip latencies for each; each such estimate
+will be verified by nodes before adding to the directory.
+- Ring: a list is circulated directionally to which each peer appends an entry
+with its public key and a set of timestamps; when the list is complete, all
+addresses can be computed simultaneously by all peers.
+- Hub-and-spoke: addresses are either assigned manually or automatically in a
+centralized, hierarchical manner; address assignments are verified by
+certificates stemming from the central authority.
 
 ### 5.1 Bootstrapping a New Network
 
-@todo
+Bootstrapping is a process that determines the network configuration once peers
+connect on a link, using a unique mechanism for each topology:
 
-### 5.2 Measurements of Latency
+- Mesh and bus: when the first two neighbors on a link discover each other, they
+exchange network configurations for the link and their public keys. For each
+network configuration proposed, the nodes run a tie-breaking function by sorting
+and concatenating their public keys, then hashing the concatenation with sha256.
+The network configuration with the DID with the least Hamming distance from the
+hash becomes the network configuration.
+- Ring: when the ring is completed and all peers can send request packets and
+receive response packets, the network will be booted by broadcasting the public
+keys of all peers. The public keys will be sorted, concatenated, and hashed, and
+the node whose public key has the least Hamming distance from the hash becomes
+the network origin.
+- Hub-and-spoke: each peer will prepare a network configuration with itself as
+the origin and transmit the network configuration to its neighbors if it is a
+central router for all of its neighbors and the only possible router for them.
+
+### 5.2 Topological Measurements
 
 @todo
 
@@ -480,25 +515,26 @@ any expired messages.
 
 ### 8.2 Tunnels
 
-For enhanced privacy applications and network bridging, routers may enable a
-tunneling service. Each tunnel will take the form of a guest address assigned to
-the requesting peer by the router and will be identified with an ephemeral
-public key used as the guest public key. The guest will pay any costs for the
-tunnel specified by router policy, and the router will route packets from the
-guest address to the peer's original address and vice versa. Tunnels may include
-randomized delays to mix traffic and confound attempts at traffic analysis.
+For enhanced privacy applications and network bridging, hosts may enable a
+tunneling service (i.e. become a relay). Each tunnel will take the form of a
+guest address assigned to the requesting peer by the relay and will be
+identified with an ephemeral public key used as the guest public key. The guest
+will pay any costs for the tunnel specified by relay policy, and the relay will
+route packets from the guest address to the peer's original address and vice
+versa. Tunnels may include randomized delays to mix traffic and confound
+attempts at traffic analysis.
 
 Each packet traversing a tunnel will be encrypted in layers. When a node with a
 multihop tunnel sends a packet, it encrypts the last-hop packet first using the
 private key for that guest address and the public key of the destination; it
-wraps that packet in a request to forward addressed to that router encrypted
-with the private key for second-to-last-hop guest address and the router's
+wraps that packet in a request to forward addressed to the last relay encrypted
+with the private key for second-to-last-hop guest address and the last relay's
 public key; and it continues doing this until all tunnel hops have been included
 in the layer-encrypted packet. When the layer-encrypted packet is received by
-the first (closest) router in the tunnel, the outermost layer of encryption is
-removed, and the remaining packet is forwarded to the next router; this occurs
+the first (closest) relay in the tunnel, the outermost layer of encryption is
+removed, and the remaining packet is forwarded to the next relay; this occurs
 until the last layer of encryption is removed and the final packet is sent to
-its destination. When a packet is sent to a tunnel, the router encrypts the
+its destination. When a packet is sent to a tunnel, the relay encrypts the
 whole packet before forwarding to the next hop in the tunnel; this continues
 until the packet reaches the originator of the tunnel which can then decrypt
 each layer.
