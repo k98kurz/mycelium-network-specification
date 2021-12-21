@@ -33,16 +33,16 @@ Mycelium version and network configuration are explored.
     - Configuration
     - Domain Identifier
 4. Address Format
-    - Mesh Addresses
-    - Bus Addresses
-    - Ring Addresses
-    - Hub-and-Spoke Addresses
+    - Mesh Address Elements
+    - Bus Address Elements
+    - Ring Address Elements
+    - Hub-and-Spoke Address Elements
 5. Address Assignment/Allocation
     - Bootstrapping a New Network
     - Measurements of Latency
-    - Leasing of Guest Addresses from Peers
+    - Leasing of Guest Addresses from Hosts
     - Calculation and Assignment of Address
-    - Verification of Address Self-Assignment by Peers
+    - Verification of Address Assignment by Peers
     - PKI/Directory Service
 6. Gossip
     - Network Configuration
@@ -76,7 +76,8 @@ Layers
 13. Upgrades/Downgrades
     - Mycelium Version
     - Network Configuration
-14. References
+14. Epilogue
+15. References
 
 
 ## 1. Introduction
@@ -116,6 +117,7 @@ host; all hops in a tunnel are encrypted in layers for privacy, and each hop is
 delayed up to a maximum allowed in the headers, so traffic is indistinguishable
 from ordinary traffic, and the endpoints of a tunnel are hidden from observers.
 - neighbors: nodes which can communicate with each other directly over a link.
+- packet/datagram: a Mycelium header plus payload.
 - autonomous network: a collection of peers that share a network topology, route
 packets for each other, and provide peer services to each other. Each autonomous
 network has its own identifier used in directory entires.
@@ -143,7 +145,24 @@ neighbors.
 - gradient: the scalar sum of the partial derivatives of a function that
 calculates the mean squared error given estimated coordinates and vectors
 containing known coordinates and distances.
-- domain identifier (DID): the Merkle root of the network configuration.
+- hash function: a cryptographic one-way function mapping an arbitary length bit
+string to a single, fixed-length output; given the output of a secure hash
+function, it is computationally infeasible to determine the input, but it is
+easy to verify that an input maps to an output by evaluating the hash function.
+- Merkle tree: a binary tree data structure in which a data set is separated
+into "leaves", each of which is the hash of the datum; two leaves are hashed
+together to create a node; and nodes are combined two at a time to create more
+nodes until arriving at a single hash output, called the root. Given a Merkle
+root, it is possible to prove that a data point is a leaf without revealing the
+entire data set, which is useful for privacy and bandwidth-saving purposes. In
+general, a Merkle tree has 2^n number of leaves, sum(2^i for i=1 to n) nodes,
+and inclusion proofs with n elements.
+- Merklized data structure: a hashed data structure that retains the Merkle tree
+properties of compressing a data set into a single cryptographic commitment
+which can be used to create efficient inclusion proofs; however, not all leaves
+must have the same depth within the hash tree, leading to variable-length
+inclusion proofs.
+- domain identifier (DID): the unique ID for an autonomous network.
 - peer identifier (PID): an identifier created from a DID, an address from that
 network, and the public key of the peer with that address.
 - content identifier (CID): a hash or Merkle root of some data.
@@ -227,7 +246,7 @@ mesh network.
 - Ring: a group of peers sharing links configured in a ring topology.
 - Hub-and-Spoke: a group of peers organized in a hierarchical structure with a
 central router providing routing services to its client hosts; a hub-and-spoke
-network may be organized as a multilayer network, or it may be a simple network
+network may be organized as a multilevel network, or it may be a simple network
 with a central router bridging to other networks.
 
 An autonomous network can be configured for a single link or a set of links with
@@ -243,65 +262,120 @@ over time.
 An autonomous network is configured with a Merklized data structure specifying
 the following parameters:
 
-- Tree 1:
+- Sub-tree 1: general parameters
     - Mycelium version: the hash of the specification or reference
     implementation of the Mycelium version.
     - Network topology type: the expected network topology to model, i.e. mesh,
     bus, ring, or hub-and-spokes as described in this document, or a topology
     described in a later version.
-    - Address format: the number and data format of coordinates used to describe
-    a node's location in the specified topology.
+    - Data links: a list of descriptions of data links to be included in the
+    network.
+    - Retransmission limit: the maximum number of times a node should attempt
+    to resend a given datagram.
+    - Forwarding threshold: a distance threshold used for determining whether a
+    router will attempt to forward a datagram in a network.
+
+- Sub-tree 2: topology model parameters
+    - Address format: the number and data format of address elements used to
+    describe a node's location in the modeled topology; the final element is the
+    guest-specific address element.
     - Distance metric: which distance metric to use for gradient descent, i.e.
     L1 norm (taxicab geometry), L2 norm (Euclidean), L3 norm, L-infinity norm
-    (Chebyshev), arbitrary Minkowski (tuned p parameter), or some other metric
-    introduced in a later version.
-
-- Tree 2:
+    (Chebyshev), arbitrary Minkowski (tuned p parameter), none, or some other
+    metric introduced in a later version. Valid only for mesh and bus models.
     - Gradient threshold: the maximum gradient value for a set of coordinates
     given vectors of neighbor coordinates and distance measurements to those
-    neighbors.
+    neighbors. Valid only for mesh and bus models.
     - Error threshold: the maximum mean squared error value for a set of
     coordinates given vectors of neighbor coordinates and distance measurements
-    to those neighbors.
+    to those neighbors. Valid only for mesh and bus models.
 
-- Tree 3:
+- Sub-tree 3: security parameters
     - Hashcash threshold: the minimum hashcash proof-of-work difficulty for a
     message to be honored by peers.
     - @todo complete the security params
 
-- Tree 4:
+- Sub-tree 4: network administration details
     - Network origin public key: the public key of the network origin; can be
     the public key of an individual node or the aggregate key for several nodes.
-    - Network admin key(s): the public key of the network admin(s) used for
+    - Network admin key(s): the public key(s) of the network admin(s) used for
     updating the network configuration.
 
+The hash function for constructing the network configuration hash sub-trees will
+be sha256, and the roots of each of the sub-trees will be combined into one tree
+committing the whole network configuration to a single Merkle root.
+
+### 3.3 Domain Identifier
+
+Each autonomous network is specified by a configuration as outlined above, and
+the domain identifier (DID) is the Merkle root of the configuration.
 
 ## 4. Address Format
 
 Addresses assigned to hosts will follow a format specified in the network
 configuration as used in a topology model. The topological data will be encoded
 by XORing the address elements with the network DID. Guest addresses will be the
-address of the host XORed with a guest-specific address element of latency
-measured between host and guest.
+address of the host XORed with a guest-specific address element encoding either
+the latency measured between host and guest or an arbitrary bit string.
 
-### 4.1 Mesh Addresses
+Each address format specification must encode no greater than 256 bits of data.
+Address elements will be packed into a bit string padded to the length of the
+DID bit string. The address element bit string will be XORed with the DID to
+produce the address.
+
+### 4.1 Mesh Address Elements
 
 A mesh topology network uses tuples of floats as coordinates to encode the
 location of each node in relation to its peers within a normed vecor space. Each
 mesh network configuration will include the number of dimensions of the vector
-space and the norm (distance metric)
+space, the norm (distance metric), and the data types used for each coordinate
+and the guest address element. The recommended number of dimensions is 3, and
+the recommended data type for each address element is float64.
 
-### 4.2 Bus Addresses
+### 4.2 Bus Address Elements
 
-@todo
+A bus data link is topologically similar to a one-dimensional mesh. Neighbors
+should not need to route datagrams for each other, but retransmission may be
+a necessary or useful feature. Thus, a single float64 will be sufficient for
+addressing hosts on a bus link and determining whether or not to retransmit.
 
-### 4.3 Ring Addresses
+### 4.3 Ring Address Elements
 
-@todo
+Ring networks are characterized by routers that are each connected to exactly
+two neighbors. Ring networks can have unidirectional or bidirectional
+transmissions.
 
-### 4.4 Hub-and-Spoke Addresses
+For rings with unidirectional transmissions, all request-response communications
+between peers will have theoretically equal latencies, so latency is useless for
+modeling the topology. However, a ring network will have a measurable number of
+hops for each transmission. Mapping the entire network topology can be achieved
+by each router adding its public key to the end of a list and retransmitting the
+list. Once the list is complete, each router can then count the number of hops
+required to receive a transmission from the network origin as well as the number
+of hops required for the network origin to receive a response. These two numbers
+will each be encoded as an integer; the recommended encoding is uint32.
 
-@todo
+For rings with bidirectional transmissions, two float elements will be used to
+indicate distance in the two chiralities (clockwise and anticlockwise). The
+recommended encoding is float64.
+
+### 4.4 Hub-and-Spoke Address Elements
+
+A hub-and-spoke network is controlled either by a central router or a hierarchy
+stemming from a central router. For a non-hierarchical hub-and-spoke network,
+the router will have 256 bits to use in address assignment. For hierarchical
+hub-and-spoke networks, there are two possible models: one with manual
+assignment of address blocks and one with automatic address block assignment.
+For the manually operated network, each address assignment will include an
+address block over which the host has the authority to assign addresses or
+further delegate address assignment through smaller blocks. For the automatic
+network, each level down the hierarchy will reduce the assignable address block
+size by a number of bits specified in the network configuration corresponding to
+the maximum number of hosts at each level; the suggested value for this
+parameter is 10. Thus, each element of an address in a hub-and-spoke network
+corresponds to the peer's assigned position within that layer of the hierarchy.
+For example, IPv4 and IPv6 could be implemented as manually-operated,
+hierarchical hub-and-spoke Mycelium networks.
 
 
 ## 5. Address Assignment/Allocation
@@ -316,7 +390,7 @@ space and the norm (distance metric)
 
 @todo
 
-### 5.3 Leasing of Guest Addresses from Peers
+### 5.3 Leasing of Guest Addresses from Hosts
 
 @todo
 
@@ -324,7 +398,7 @@ space and the norm (distance metric)
 
 @todo
 
-### 5.5 Verification of Address Claim by Peers
+### 5.5 Verification of Address Assignment by Peers
 
 @todo
 
@@ -410,10 +484,27 @@ For enhanced privacy applications and network bridging, routers may enable a
 tunneling service. Each tunnel will take the form of a guest address assigned to
 the requesting peer by the router and will be identified with an ephemeral
 public key used as the guest public key. The guest will pay any costs for the
-tunnel speified by router policy
+tunnel specified by router policy, and the router will route datagrams from the
+guest address to the peer's original address and vice versa. Tunnels may include
+randomized delays to mix traffic and confound attempts at traffic analysis.
 
-Each packet traversing a tunnel will be encrypted in layers similarly to onion
-routing, with each layer containing
+Each packet traversing a tunnel will be encrypted in layers. When a node with a
+multihop tunnel sends a packet, it encrypts the last-hop packet first using the
+private key for that guest address and the public key of the destination; it
+wraps that packet in a request to forward addressed to that router encrypted
+with the private key for second-to-last-hop guest address and the router's
+public key; and it continues doing this until all tunnel hops have been included
+in the layer-encrypted packet. When the layer-encrypted packet is received by
+the first (closest) router in the tunnel, the outermost layer of encryption is
+removed, and the remaining datagram is forwarded to the next router; this occurs
+until the last layer of encryption is removed and the final packet is sent to
+its destination. When a packet is sent to a tunnel, the router encrypts the
+whole packet before forwarding to the next hop in the tunnel; this continues
+until the packet reaches the originator of the tunnel which can then decrypt
+each layer.
+
+A 0-hop tunnel is created when a host leases a guest address to itself. It is
+recommended that every tunnel start with a 0-hop tunnel.
 
 ### 8.3 Topology Testing
 
@@ -550,6 +641,11 @@ adjust its service throttling to maintain link efficiency and mitigate link
 congestion.
 
 
-## 14. References
+## 14. Epilogue
+
+@todo
+
+
+## 15. References
 
 @todo
