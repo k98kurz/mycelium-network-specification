@@ -60,6 +60,9 @@ Mycelium version and network configuration are explored.
     - Tunnels Through Routers
     - Topology Testing
 9. Routing and Route Discovery
+    - Distance Heuristic
+    - Congestion Detection and Mitigation
+    - Tunneling
 10. Route Table Construction
     - Local Networks
     - Bridges to Other Networks
@@ -168,7 +171,10 @@ inclusion proofs.
 network, and the public key of the peer with that address.
 - content identifier (CID): a hash or Merkle root of some data.
 - Hamming distance: the number of different bits between two blocks of data,
-i.e. the number of 1s in the output of XORing two equal-length bit strings.
+i.e. the number of 1s in the output of XORing two equal-length bit strings; if
+the bitstrings do not have equal length, a number of least significant bits of
+the larger bitstring are dropped equal to the difference in length before the
+XOR operation, and that number may added to the result.
 - distributed hash table (DHT): a distributed data structure in which full
 replication is not necessary and likelihood for a peer to maintain a copy of a
 block of data is proportional to the Hamming distance between its CID and the
@@ -281,6 +287,8 @@ the following parameters:
     to resend a given packet.
     - Forwarding threshold: a distance threshold used for determining whether a
     router will attempt to forward a packet in a network.
+    - Bootstrap URIs: (optional) a list of addresses on data links useful for
+    bootstrapping.
 
 - Sub-tree 2: topology model parameters
     - Address format: the number and data format of address elements used to
@@ -290,6 +298,9 @@ the following parameters:
     L1 norm (taxicab geometry), L2 norm (Euclidean), L3 norm, L-infinity norm
     (Chebyshev), arbitrary Minkowski (tuned p parameter), none, or some other
     metric introduced in a later version. Valid only for mesh and bus models.
+    - Measurement thresholds: an ordered list of 1-byte ints corresponding to
+    the number of observations that must be made for each type of measurement
+    for the specific topology.
     - Gradient threshold: the maximum gradient value for a set of coordinates
     given vectors of neighbor coordinates and distance measurements to those
     neighbors. Valid only for mesh and bus models.
@@ -423,19 +434,107 @@ central router for all of its neighbors and the only possible router for them.
 
 ### 5.2 Topological Measurements
 
+The goals of Mycelium nodes are to model the topologies of the networks they can
+create over the available links and route traffic using those models. Thus,
+peers must take measurements and use those measurements to determine the
+topology and addresses of peers on the network. Using an iterative process,
+networks of Mycelium nodes gradually improve their topology models, dropping old
+models as they become invalidated and adopting new models that better fit the
+available data.
+
+To determine which topology models are appropriate for a link, a node will send
+beacon packets on its links identified with a UUID and the node's public key.
+Each beacon packet will include proof-of-work as described in 11.1 Spam
+Protection as well as a hop limit. Any node that receives a beacon packet will
+add its public key to the list of beacon witnesses and broadcast the amended
+beacon packet if it meets the node's policy criteria.
+
+The measurement methods will be specific to each topology model:
+
+#### Mesh and Bus
+
+The appropriate measurement is round-trip latency between two neighbors. Each
+packet will include a sequence byte incremented upon each transmission and
+any request message or measured latency value. All transmissions will include
+a session code for synchronization, and latency will be measured in milliseconds
+and encoded with the guest address element data type.
+
+When node A requests to measure the link latency with node B, it includes a
+sequence byte seqA and a request to make N measurements. Node B's response will
+include sequence byte seqB, an agreement to make N measurements, and a request
+to make M measurements of its own. Node A will respond with incremented seqA, an
+agreement to make M meaurements, and its first measurement of latency. Node B
+will response with incremented seqB and its first measurement of latency. Node A
+and node B continue exchanging incremented sequence bytes and latency
+measurements until either they have shared a number of measurements equal to the
+greater of N and M or until a transmission error causes the protocol to fail. In
+the case of a failure due to transmission error, after a delay equivalent to 5
+times the average latency measured to that point, the node which successfully
+sent the last packet will attempt to restart the process within the session.
+The neighbors then average their latency measurements and sign an attestation
+with MuSig.
+
+#### Ring
+
+The appropriate measurement for unidirectional rings is the number of hops in
+the ring; latency measurements can be made for the whole ring but are not
+particularly helpful. The appropriate measurement for a bidirectional ring, on
+the other hand, is the latency of each hop.
+
+@todo
+
+#### Hub-and-Spoke
+
 @todo
 
 ### 5.3 Leasing of Guest Addresses from Hosts
 
-@todo
+After a topology measurement attestation is made between two neighbors, the node
+whose public key has the lowest Hamming distance to the DID requests a guest
+address lease from the other node. If only one neighbor is a host, the guest
+node requests a guest address lease from the host. The host then leases a guest
+address if the request met its policy requirements.
+
+In the hub-and-spoke model, hosts have total discretion over how they assign
+guest addresses, so topological measurements can be made but are not necessary.
 
 ### 5.4 Calculation and Assignment of Address
 
-@todo
+The node with the new guest address and topological measurement attestation then
+updates its topological model:
+
+- Mesh and bus: the node runs gradient descent in the n-dimensional address
+space with at least n+1 of its most recently leased guest addresses/latency
+attestations obtained from unique hosts. That result is then used as the new
+host address elements, which is encoded by XORing with the DID, combined with
+the attestations and digital signature of the host, and gossiped through the
+network.
+- Ring, unidirectional: @todo
+- Ring, bidirectional: @todo
+- Hub-and-spoke: each host with address assignment authority has discretion to
+assign address blocks to its guests to make them hosts/routers and should do so
+if a guest attests to accessing multiple nodes that the host cannot access and
+all its policy requirements are met. Each host address assignment will include
+the digital signature chain proving authority delegated from the admin keys set
+in the network configuration.
 
 ### 5.5 Verification of Address Assignment by Peers
 
-@todo
+- Mesh and bus: when a new host address claim is encountered by a peer, that
+peer calculates the gradient and mean squared error using the address elements
+and the measurement attestations. If the gradient and MSE are below the
+thresholds set in the network configuration, the address is verified.
+- Ring, unidirectional: @todo
+- Ring, bidirectional: @todo
+- Hub-and-spoke: each host checks the digital signature chain attached to each
+address assignment. If the digital signatures are valid, the address allocation
+rules are followed, no assignment in the signature chain has expired, and the
+root digital signature is authorized in the network configuration, the address
+is verified.
+
+Once an address assignment is verified, the gossip is marked for retransmission,
+and the address assignment is added to the local copy of the network directory,
+replacing any older entries for that public key.
 
 ### 5.6 PKI/Diretory Service
 
@@ -559,6 +658,18 @@ then drop the route that had the larger mean squared error.
 
 
 ## 9. Routing and Route Discovery
+
+@todo
+
+### 9.1 Distance Heuristic
+
+@todo
+
+### 9.2 Congestion Detection and Mitigation
+
+@todo
+
+### 9.3 Tunneling
 
 @todo
 
