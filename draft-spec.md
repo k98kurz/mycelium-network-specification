@@ -446,8 +446,8 @@ To determine which topology models are appropriate for a link, a node will send
 beacon packets on its links identified with a UUID and the node's public key.
 Each beacon packet will include proof-of-work as described in 11.1 Spam
 Protection as well as a hop limit. Any node that receives a beacon packet will
-add its public key to the list of beacon witnesses and broadcast the amended
-beacon packet if it meets the node's policy criteria.
+add its public key and digital signature to the list of beacon witnesses and
+broadcast the amended beacon packet if it meets the node's policy criteria.
 
 The measurement methods will be specific to each topology model:
 
@@ -464,7 +464,7 @@ sequence byte seqA and a request to make N measurements. Node B's response will
 include sequence byte seqB, an agreement to make N measurements, and a request
 to make M measurements of its own. Node A will respond with incremented seqA, an
 agreement to make M meaurements, and its first measurement of latency. Node B
-will response with incremented seqB and its first measurement of latency. Node A
+will respond with incremented seqB and its first measurement of latency. Node A
 and node B continue exchanging incremented sequence bytes and latency
 measurements until either they have shared a number of measurements equal to the
 greater of N and M or until a transmission error causes the protocol to fail. In
