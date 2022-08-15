@@ -36,7 +36,7 @@ Mycelium version and network configuration are explored.
     - Mesh Address Elements
     - Bus Address Elements
     - Ring Address Elements
-    - Hub-and-Spoke Address Elements
+    - Spanning Tree Address Elements
 5. Address Assignment/Allocation
     - Bootstrapping a New Network
     - Topological Measurements
@@ -212,6 +212,13 @@ be generated from an Ed25519 private key, and a Curve25519 public key can be
 generated from an Ed25519, providing for a compact PKI where one public key can
 be used for both verifying signatures and deriving shared secrets.
 - MuSig/MuSig2: a Schnorr aggregate signature scheme compatible with Ed25519.
+- Ed-PoW: a Hashcash-esque proof-of-work system for spam protection whereby the
+public key of an Ed25519 key pair contains a number of preceding null bits; this
+works by generating a seed and XORing it with an incrementing nonce or using the
+technique from BIP32 adapted for Ed25519 until a key pair is generated meeting
+the pubkey preceding null bit requirement. In the case of MuSig/MuSig2, one of
+the participants will have to run the PoW system until the aggregate key meets
+the PoW requirement, then sign a message endorsing the new participant key pair.
 - Sybil attack: an attack in which a bad actor pretends to be many nodes to
 manipulate a network, unfairly distort network activity, or steal a network
 service.
@@ -257,15 +264,13 @@ normed vector space and a distance metric.
 - Bus: a group of peers sharing a data bus link; effectively a 1-dimensional
 mesh network.
 - Ring: a group of peers sharing links configured in a ring topology.
-- Hub-and-Spoke: a group of peers organized in a hierarchical structure with a
-central router providing routing services to its client hosts; a hub-and-spoke
-network may be organized as a multilevel network, or it may be a simple network
-with a central router bridging to other networks.
+- Spanning tree: a group of peers organized in a connected graph structure with
+an elected root and an address system that embeds the network structure.
 
 An autonomous network can be configured for a single link or a set of links with
 similar topological characteristics, e.g. a network comprised of 802.11 and LoRa
 radios for which a mesh topology is most appropriate, or ethernet and PPP links
-for which hub-and-spoke is an appropriate topology. Mycelium nodes will attempt
+for which spanning tree is an appropriate topology. Mycelium nodes will attempt
 to determine the optimal topologies for their local networks, and the iterative
 process should refine the accuracy of the topologies and utility of directories
 over time.
@@ -279,7 +284,7 @@ the following parameters:
     - Mycelium version: the hash of the specification or reference
     implementation of the Mycelium version.
     - Network topology type: the expected network topology to model, i.e. mesh,
-    bus, ring, or hub-and-spokes as described in this document, or a topology
+    bus, ring, or spanning tree as described in this document, or a topology
     described in a later version.
     - Data links: a list of descriptions of data links to be included in the
     network.
@@ -311,6 +316,8 @@ the following parameters:
 - Sub-tree 3: security parameters
     - Hashcash threshold: the minimum hashcash proof-of-work difficulty for a
     message to be honored by peers.
+    - Ed-PoW threshold: the minimum Ed-PoW difficulty for a public key address
+    to be honored by peers; effectively an anti-spam measure for joining nodes.
     - @todo complete the security params
 
 - Sub-tree 4: network administration details
@@ -327,6 +334,7 @@ committing the whole network configuration to a single Merkle root.
 
 Each autonomous network is specified by a configuration as outlined above, and
 the domain identifier (DID) is the Merkle root of the configuration.
+
 
 ## 4. Address Format
 
@@ -377,12 +385,12 @@ For rings with bidirectional transmissions, two float elements will be used to
 indicate distance in the two chiralities (clockwise and anticlockwise). The
 recommended encoding is float64.
 
-### 4.4 Hub-and-Spoke Address Elements
+### 4.4 Spanning Tree Address Elements
 
-A hub-and-spoke network is controlled either by a central router or a hierarchy
-stemming from a central router. For a non-hierarchical hub-and-spoke network,
+A spanning tree network is controlled either by a central router or a hierarchy
+stemming from a central router. For a non-hierarchical spanning tree network,
 the router will have 256 bits to use in address assignment. For hierarchical
-hub-and-spoke networks, there are two possible models: one with manual
+spanning tree networks, there are two possible models: one with manual
 assignment of address blocks and one with automatic address block assignment.
 For the manually operated network, each address assignment will include an
 address block over which the host has the authority to assign addresses or
@@ -390,10 +398,10 @@ further delegate address assignment through smaller blocks. For the automatic
 network, each level down the hierarchy will reduce the assignable address block
 size by a number of bits specified in the network configuration corresponding to
 the maximum number of hosts at each level; the suggested value for this
-parameter is 10. Thus, each element of an address in a hub-and-spoke network
+parameter is 10. Thus, each element of an address in a spanning tree network
 corresponds to the peer's assigned position within that layer of the hierarchy.
 For example, IPv4 and IPv6 could be implemented as manually-operated,
-hierarchical hub-and-spoke Mycelium networks.
+hierarchical spanning tree Mycelium networks.
 
 
 ## 5. Address Assignment/Allocation
@@ -408,9 +416,9 @@ will be verified by nodes before adding to the directory.
 - Ring: a list is circulated directionally to which each peer appends an entry
 with its public key and a set of timestamps; when the list is complete, all
 addresses can be computed simultaneously by all peers.
-- Hub-and-spoke: addresses are either assigned manually or automatically in a
-centralized, hierarchical manner; address assignments are verified by
-certificates stemming from the central authority.
+- Spanning tree: addresses are either assigned manually or automatically in a
+centralized/hierarchical manner; address assignments are verified by
+certificates stemming from the central authority, which may be elected.
 
 ### 5.1 Bootstrapping a New Network
 
@@ -428,9 +436,11 @@ receive response packets, the network will be booted by broadcasting the public
 keys of all peers. The public keys will be sorted, concatenated, and hashed, and
 the node whose public key has the least Hamming distance from the hash becomes
 the network origin.
-- Hub-and-spoke: each peer will prepare a network configuration with itself as
+- Spanning tree: each peer will prepare a network configuration with itself as
 the origin and transmit the network configuration to its neighbors if it is a
 central router for all of its neighbors and the only possible router for them.
+Alternately, the network configuration may have a target bitstring, and the
+router with the least XOR distance from that target is elected as the origin.
 
 ### 5.2 Topological Measurements
 
@@ -481,11 +491,22 @@ the ring; latency measurements can be made for the whole ring but are not
 particularly helpful. The appropriate measurement for a bidirectional ring, on
 the other hand, is the latency of each hop.
 
+Hosts will transmit and retransmit beacon packets containing lists of public
+keys, timestamps, and signatures, each appending its own public key, timestamp,
+and signature to each list before forwarding. When a given host's beacon
+traverses an entire unidirecitonal ring, that host will have a complete topology
+of the ring.
+
+For a bidirectional ring created by connecting each host with its neighbors over
+unique links,
+
 @todo
 
-#### Hub-and-Spoke
+#### Spanning Tree
 
-@todo
+Topological measurements are not necessary in a spanning tree. However,
+link reliability may be considered when a node chooses a peer from which it will
+lease an address.
 
 ### 5.3 Leasing of Guest Addresses from Hosts
 
@@ -495,8 +516,16 @@ address lease from the other node. If only one neighbor is a host, the guest
 node requests a guest address lease from the host. The host then leases a guest
 address if the request met its policy requirements.
 
-In the hub-and-spoke model, hosts have total discretion over how they assign
+In the spanning tree model, hosts have total discretion over how they assign
 guest addresses, so topological measurements can be made but are not necessary.
+In automatic construction mode, once an origin router is configured or elected,
+that origin assigns an address with a single random value as the first address
+element to each peer and null for the remaining elements. Those peers in turn
+add another random value as the second address element to assign to their peers.
+This assignment process propagates through the graph until the full tree has
+been formed. This specification uses Virtual Overlays Using Tree Embeddings
+(VOUTE) by Stefani Roos et al. and An Algorithm for Distributed Computation of a
+Spanning Tree in an Extended LAN by Radia Perlman as references.
 
 ### 5.4 Calculation and Assignment of Address
 
@@ -511,12 +540,12 @@ the attestations and digital signature of the host, and gossiped through the
 network.
 - Ring, unidirectional: @todo
 - Ring, bidirectional: @todo
-- Hub-and-spoke: each host with address assignment authority has discretion to
+- Spanning tree: each host with address assignment authority has discretion to
 assign address blocks to its guests to make them hosts/routers and should do so
 if a guest attests to accessing multiple nodes that the host cannot access and
 all its policy requirements are met. Each host address assignment will include
 the digital signature chain proving authority delegated from the admin keys set
-in the network configuration.
+in the network configuration or a proof of origin election.
 
 ### 5.5 Verification of Address Assignment by Peers
 
@@ -526,11 +555,12 @@ and the measurement attestations. If the gradient and MSE are below the
 thresholds set in the network configuration, the address is verified.
 - Ring, unidirectional: @todo
 - Ring, bidirectional: @todo
-- Hub-and-spoke: each host checks the digital signature chain attached to each
+- Spanning tree: each host checks the digital signature chain attached to each
 address assignment. If the digital signatures are valid, the address allocation
 rules are followed, no assignment in the signature chain has expired, and the
-root digital signature is authorized in the network configuration, the address
-is verified.
+root digital signature is authorized in the network configuration or belongs to
+a node with the lowest XOR distance from the target bitstring, the address is
+verified.
 
 Once an address assignment is verified, the gossip is marked for retransmission,
 and the address assignment is added to the local copy of the network directory,
